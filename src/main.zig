@@ -5,15 +5,17 @@ const CHIP_8 = @import("CHIP_8");
 
 pub fn main(init: std.process.Init) !void {
     _ = init;
-    var program = [_]u8{ 0x61, 0x22, 0x64, 0x24 };
+    var program = [_]u8{ 0x61, 0x22, 0x64, 0x24, 0x74 };
 
     var vm = try CHIP_8.VM.init(&program);
     var debug = CHIP_8.DebugVM.init(&vm);
 
     debug.printRegisters();
-    vm.executeNextInstruction();
+    _ = try vm.executeNextOp();
     debug.printRegisters();
-    vm.executeNextInstruction();
+    _ = try vm.executeNextOp();
+    debug.printRegisters();
+    _ = try vm.executeNextOp();
     debug.printRegisters();
 }
 

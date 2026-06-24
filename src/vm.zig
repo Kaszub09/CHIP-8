@@ -1,8 +1,8 @@
 const std = @import("std");
+const OpCode = @import("opcode.zig");
 // const Registers = @import("registers.zig");
 
 const State = enum {
-    initial,
     halt,
     running,
 };
@@ -32,7 +32,7 @@ pub const VM = struct {
     registers: Registers = .{},
     program_counter: u16 = 0,
     stack_pointer: u16 = 0,
-    state: State = .initial,
+    state: State = .running,
 
     pub fn init(program: ?[]u8) !VM {
         var vm = VM{};
@@ -49,37 +49,38 @@ pub const VM = struct {
         }
         @memcpy(self.memory[MemoryAdresses.program_start..][0..program.len], program);
         self.program_counter = MemoryAdresses.program_start;
-        self.state = .initial;
+        self.state = .running;
     }
 
     pub fn reset(self: *VM) void {
         self.registers = .{};
         @memset(&self.memory, 0);
-        self.state = .halt;
+        self.state = .running;
         self.stack_pointer = MemoryAdresses.stack_start;
+        self.program_counter = MemoryAdresses.program_start;
         //TODO other data?
     }
 
-    pub fn run(self: *VM) void {
-        self.state == .executing;
-        while (self.state == .executing) {
-            self.execute();
+    pub fn run(self: *VM) !void {
+        self.state == .running;
+        while (self.state == .running) {
+            try self.executeNextOp();
         }
     }
 
-    pub fn executeNextInstruction(self: *VM) void {
-        const opcode = (@as(u16, self.memory[self.program_counter]) << 8) | self.memory[self.program_counter + 1];
-        const first_nibble: u4 = @intCast((opcode & 0xF000) >> 12);
-
-        std.debug.print("OP={x}\n", .{opcode});
-        std.debug.print("NIB={x}\n", .{first_nibble});
-        switch (first_nibble) {
-            0x6 => {
-                const register_index: u4 = @intCast((opcode & 0x0F00) >> 8);
-                self.registers.v[register_index] = @intCast(opcode & 0x00FF);
-            },
-            else => {},
+    pub fn executeNextOp(self: *VM) !OpCode.Operation {
+        const operation = try self.peekNextOp();
+        switch (operation) {
+            .no_op => {},
+            .store_value_in_register => |op| self.registers.v[op.reg] = op.val,
+            else => std.debug.print("Not yet implemented {any}", .{operation}),
         }
+        //std.debug.print("{any}", .{@sizeOf(OpCode.Operation)});
         self.program_counter += 2;
+        return operation;
+    }
+
+    pub fn peekNextOp(self: *VM) !OpCode.Operation {
+        return OpCode.getOperation(.{ self.memory[self.program_counter], self.memory[self.program_counter + 1] });
     }
 };
