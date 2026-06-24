@@ -3,17 +3,17 @@ pub const Operation = union(enum) {
     /// 00E0
     clear_screen: void,
     /// 00EE
-    return_from_subroutine: void,
+    return_from_call: void,
     /// 1NNN
     jump_to: Adress,
     /// 2NNN
-    execute_subroutine: Adress,
+    call: Adress,
     /// 3XNN
-    skip_next_instruction_if_register_equals_value: RegisterValue,
+    skip_next_op_if_register_equals_value: RegisterValue,
     /// 4XNN
-    skip_next_instruction_if_register_not_equals_value: RegisterValue,
+    skip_next_op_if_register_not_equals_value: RegisterValue,
     /// 5XY0
-    skip_next_instruction_if_registers_are_equal: Registers,
+    skip_next_op_if_registers_are_equal: Registers,
     /// 6XNN
     store_value_in_register: RegisterValue,
     /// 7XNN
@@ -37,19 +37,19 @@ pub const Operation = union(enum) {
     /// 8XYE VX = VY << 1; F = least significant prior to shift
     shift_left_one_bit_with_carry: Registers,
     /// 9XY0
-    skip_next_instruction_if_registers_are_not_equal: RegisterValue,
+    skip_next_op_if_registers_are_not_equal: Registers,
     /// ANNN
     store_address_in_vi: Adress,
     /// BNNN
-    jump_to_address_plus_valu_in_v0: Adress,
+    jump_to_address_plus_value_in_v0: Adress,
     /// CXNN
     set_register_to_random_number_with_value_mask: RegisterValue,
     /// DXYN Draw sprite at VX,Y with N bytes stored at I; VF = 1 i pixels changed, 0 otherwise;
-    draw_sprite: RegisterValue,
+    draw_sprite: RegistersValue,
     /// EX9E
-    skip_next_instruction_if_key_pressed: Register,
+    skip_next_op_if_key_pressed: Register,
     /// EXA1
-    skip_next_instruction_if_key_not_pressed: Register,
+    skip_next_op_if_key_not_pressed: Register,
     /// FX07
     copy_timer_to_register: Register,
     /// FX0A
@@ -75,16 +75,16 @@ pub fn getOperation(bytes: [2]u8) !Operation {
     switch (first_nibble) {
         0x0 => switch (bytes[1]) {
             0xE0 => return .clear_screen,
-            0xEE => return .return_from_subroutine,
+            0xEE => return .return_from_call,
             else => return .no_op,
         },
         0x1 => return .{ .jump_to = .init(bytes) },
-        0x2 => return .{ .execute_subroutine = .init(bytes) },
-        0x3 => return .{ .skip_next_instruction_if_register_equals_value = .init(bytes) },
-        0x4 => return .{ .skip_next_instruction_if_register_not_equals_value = .init(bytes) },
+        0x2 => return .{ .call = .init(bytes) },
+        0x3 => return .{ .skip_next_op_if_register_equals_value = .init(bytes) },
+        0x4 => return .{ .skip_next_op_if_register_not_equals_value = .init(bytes) },
         0x5 => {
             if ((bytes[1] & 0x0F) != 0x00) return error.Unrecognised;
-            return .{ .skip_next_instruction_if_registers_are_equal = .init(bytes) };
+            return .{ .skip_next_op_if_registers_are_equal = .init(bytes) };
         },
         0x6 => return .{ .store_value_in_register = .init(bytes) },
         0x7 => return .{ .add_value_to_register = .init(bytes) },
@@ -104,16 +104,16 @@ pub fn getOperation(bytes: [2]u8) !Operation {
         },
         0x9 => {
             if ((bytes[1] & 0x0F) != 0x00) return error.Unrecognised;
-            return .{ .skip_next_instruction_if_registers_are_not_equal = .init(bytes) };
+            return .{ .skip_next_op_if_registers_are_not_equal = .init(bytes) };
         },
         0xA => return .{ .store_address_in_vi = .init(bytes) },
-        0xB => return .{ .jump_to_address_plus_valu_in_v0 = .init(bytes) },
+        0xB => return .{ .jump_to_address_plus_value_in_v0 = .init(bytes) },
         0xC => return .{ .set_register_to_random_number_with_value_mask = .init(bytes) },
         0xD => return .{ .draw_sprite = .init(bytes) },
         0xE => {
             switch (bytes[1]) {
-                0x9E => return .{ .skip_next_instruction_if_key_pressed = .init(bytes) },
-                0xA1 => return .{ .skip_next_instruction_if_key_not_pressed = .init(bytes) },
+                0x9E => return .{ .skip_next_op_if_key_pressed = .init(bytes) },
+                0xA1 => return .{ .skip_next_op_if_key_not_pressed = .init(bytes) },
                 else => return error.Unrecognised,
             }
         },
@@ -172,9 +172,9 @@ const Registers = struct {
 const RegistersValue = struct {
     regX: u8,
     regY: u8,
-    value: u8,
+    val: u8,
 
-    pub fn init(bytes: [2]u8) RegisterValue {
+    pub fn init(bytes: [2]u8) RegistersValue {
         return .{ .regX = bytes[0] & 0x0F, .regY = (bytes[1] & 0xF0) >> 4, .val = bytes[1] & 0x0F };
     }
 };
