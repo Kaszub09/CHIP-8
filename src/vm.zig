@@ -27,9 +27,41 @@ const MemoryAdresses = struct {
     const reserved_end: u16 = 0x0FFF;
 };
 
+const Timer = struct {
+    value: u8 = 0,
+    last_tick_at: std.Io.Clock.Timestamp = undefined,
+};
+
+const Keys = struct {
+    is_key_pressed: [16]bool = [1]u8{0} ** 16,
+};
+
 const Registers = struct {
     v: [16]u8 = [1]u8{0} ** 16,
     vI: u16 = 0,
+};
+
+const Display = struct {
+    const width: u8 = 64;
+    const height: u8 = 32;
+    const width_in_bytes: u8 = width / 8;
+
+    display: []u8 = undefined,
+
+    pub fn init(display: []u8) !Display {
+        std.Io.Timestamp.now(init.io, .real);
+        if (display.len != (width_in_bytes * height)) error.UnexpectedDisplaySize;
+        return .{ .display = display };
+    }
+
+    pub fn getPixel(self: *Display, x: u8, y: u8) u8 {
+        const line = self.display[Display.width_in_bytes * y ..][0..Display.width_in_bytes];
+        return (line[x / 8] >> @intCast(x % 8)) & 0x1;
+    }
+    pub fn xorPixel(self: *Display, x: u8, y: u8, pixel: u8) void {
+        const line = self.display[Display.width_in_bytes * y ..][0..Display.width_in_bytes];
+        line[x / 8] ^= pixel << @intCast(x % 8);
+    }
 };
 
 pub const VM = struct {
@@ -40,14 +72,19 @@ pub const VM = struct {
     stack_pointer: u16 = 0,
     state: State = .running,
     vTable: VTable = .{},
+    display: Display = undefined,
+    keys: Keys = .{},
+    io: std.Io,
+    delay_timer: Timer,
+    sound_timer: Timer,
 
-    const Display = struct {
-        const x: u8 = 64;
-        const y: u8 = 32;
-    };
-
-    pub fn init(program: ?[]u8, vTable: VTable) !VM {
-        var vm = VM{ .vTable = vTable };
+    pub fn init(io: std.Io, program: ?[]u8, vTable: VTable) !VM {
+        var vm = VM{
+            .vTable = vTable,
+            .io = io,
+            .delay_timer = .{ .last_tick_at = std.Io.Timestamp.now(io, .real) },
+            .sound_timer = .{ .last_tick_at = std.Io.Timestamp.now(io, .real) },
+        };
         vm.reset();
         if (program) |prog| {
             try vm.loadProgram(prog);
@@ -81,6 +118,15 @@ pub const VM = struct {
     }
 
     pub fn executeNextOp(self: *VM) !OpCode.Operation {
+        if (self.delay_timer.value > 0) {
+            if (self.delay_timer.last_tick_at.untilNow(self.Io).raw.toMilliseconds() > (1 / 60)) self.delay_timer.value -= 1;
+            self.delay_timer.last_tick_at = std.Io.Timestamp.now(self.io, .real);
+        }
+        if (self.sound_timer.value > 0) {
+            if (self.sound_timer.last_tick_at.untilNow(self.Io).raw.toMilliseconds() > (1 / 60)) self.sound_timer.value -= 1;
+            self.sound_timer.last_tick_at = std.Io.Timestamp.now(self.io, .real);
+        }
+
         const operation = try self.peekNextOp();
 
         self.program_counter += 2; //Most instruction increments by 2, some overwrite it, so put it first
@@ -89,13 +135,13 @@ pub const VM = struct {
             .no_op => {},
             .clear_screen => @memset(self.memory[MemoryAdresses.display_start..][0..MemoryAdresses.display_end], 0),
             .return_from_call => {
-                self.program_counter = try self.pop(); //We pushed counter that was already incremented past call op
+                self.program_counter = try self.popStack(); //We pushed counter that was already incremented past call op
             },
             .jump_to => |adr| {
                 self.program_counter = adr.address;
             },
             .call => |adr| {
-                try self.push(self.program_counter); //We op after call
+                try self.pushStack(self.program_counter); //We op after call
                 self.program_counter = adr.address;
             },
             .skip_next_op_if_register_equals_value => |reg_val| {
@@ -151,26 +197,49 @@ pub const VM = struct {
                 _ = reg_val;
             },
             .draw_sprite => |regs_val| {
-                var display: []u8 = self.memory[MemoryAdresses.display_start..][0..MemoryAdresses.display_end];
                 const sprite = self.memory[self.registers.vI..][0..regs_val.val];
-                const x = self.registers.v[regs_val.regX] % VM.Display.x;
-                const y = self.registers.v[regs_val.regX] % VM.Display.y;
+                const x_start = self.registers.v[regs_val.regX] % VM.Display.x;
+                const y_start = self.registers.v[regs_val.regY] % VM.Display.y;
+
+                self.registers.v[0xF] = 0;
 
                 for (sprite, 0..) |byte, y_offset| {
-                    var display_line: []u8 = display[VM.Display.x * (y + y_offset) ..][0..VM.Display.x];
-                    if (x % 8 == 0) {
-                        display_line[x / 8] ^= byte;
-                    } else {
-                        display_line[x / 8] ^= (byte >> @intCast(x % 8));
-                        display_line[(x / 8) + 1] ^= (byte << @intCast(8 - (x % 8)));
+                    for (0..8) |bit_offset| {
+                        const x = x_start + bit_offset;
+                        const y = y_start + y_offset;
+                        if (x >= VM.Display.x) continue;
+
+                        const pixel = byte & (0x1 << bit_offset);
+                        if (pixel == 0) continue;
+
+                        if (self.display.getPixel(x, y) == 0x1) self.registers.v[0xF] = 1;
+
+                        self.display.xorPixel(x, y, pixel);
                     }
-                    //TODO set register
                 }
-                if (self.vTable.display_fn) |display_fn| display_fn(display);
             },
-            else => std.debug.print("Not yet implemented {any}", .{operation}),
+            .skip_next_op_if_key_pressed => |reg| {
+                if (self.keys.is_key_pressed[reg.reg]) {
+                    self.program_counter += 2;
+                }
+            },
+            .skip_next_op_if_key_not_pressed => |reg| {
+                if (!self.keys.is_key_pressed[reg.reg]) {
+                    self.program_counter += 2;
+                }
+            },
+            .set_timer_to_register => |reg| {
+                self.delay_timer = .{ .value = self.registers.v[reg.reg], .last_tick_at = std.Io.Timestamp.now(self.io, .real) };
+            },
+            .set_sound_timer_to_register => |reg| {
+                self.sound_timer = .{ .value = self.registers.v[reg.reg], .last_tick_at = std.Io.Timestamp.now(self.io, .real) };
+            },
+            .add_register_to_vi => |reg| self.registers.vI += self.registers.v[reg.reg],
+            else => {
+                std.debug.print("Not supported, halting execution {any}", .{operation});
+                self.state = .halt;
+            },
         }
-        //std.debug.print("{any}", .{@sizeOf(OpCode.Operation)});
         return operation;
     }
 
@@ -182,14 +251,14 @@ pub const VM = struct {
         return self.memory[MemoryAdresses.stack_start..][0..MemoryAdresses.stack_end];
     }
 
-    fn push(self: *VM, value: u16) !void {
+    fn pushStack(self: *VM, value: u16) !void {
         if (self.stack_pointer >= MemoryAdresses.stack_end) return error.StackOverflow;
         self.memory[self.stack_pointer] = @truncate(value >> 8);
         self.memory[self.stack_pointer + 1] = @truncate(value);
         self.stack_pointer += 2;
     }
 
-    fn pop(self: *VM) !u16 {
+    fn popStack(self: *VM) !u16 {
         if (self.stack_pointer <= MemoryAdresses.stack_start) return error.StackUndeflow;
         self.stack_pointer -= 2;
         return (@as(u16, self.memory[self.stack_pointer]) << 8) | self.memory[self.stack_pointer + 1];
