@@ -4,10 +4,9 @@ const Io = std.Io;
 const CHIP_8 = @import("CHIP_8");
 
 pub fn main(init: std.process.Init) !void {
-    _ = init;
     var program = [_]u8{ 0x61, 0x22, 0x74, 0x0, 0xD0, 0x11 };
 
-    var vm = try CHIP_8.VM.init(&program, .{ .display_fn = display_fn });
+    var vm = try CHIP_8.VM.init(init.io, &program, .{ .display_fn = display_fn });
     var debug = CHIP_8.DebugVM.init(&vm);
 
     debug.printState();

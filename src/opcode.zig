@@ -68,9 +68,10 @@ pub const Operation = union(enum) {
     store_v0_to_vx_inclusive_to_mem_at_vi: Register,
     /// FX65 After op VI = VI + VX + 1
     fill_v0_to_vx_inclusive_from_mem_at_vi: Register,
+    unrecognised,
 };
 
-pub fn getOperation(bytes: [2]u8) !Operation {
+pub fn getOperation(bytes: [2]u8) Operation {
     const first_nibble = (bytes[0] & 0xF0) >> 4;
     switch (first_nibble) {
         0x0 => switch (bytes[1]) {
@@ -83,7 +84,7 @@ pub fn getOperation(bytes: [2]u8) !Operation {
         0x3 => return .{ .skip_next_op_if_register_equals_value = .init(bytes) },
         0x4 => return .{ .skip_next_op_if_register_not_equals_value = .init(bytes) },
         0x5 => {
-            if ((bytes[1] & 0x0F) != 0x00) return error.Unrecognised;
+            if ((bytes[1] & 0x0F) != 0x00) return .unrecognised;
             return .{ .skip_next_op_if_registers_are_equal = .init(bytes) };
         },
         0x6 => return .{ .store_value_in_register = .init(bytes) },
@@ -99,11 +100,11 @@ pub fn getOperation(bytes: [2]u8) !Operation {
                 0x6 => return .{ .shift_right_one_bit_with_carry = .init(bytes) },
                 0x7 => return .{ .subtract_registers_with_carry_another_order = .init(bytes) },
                 0xE => return .{ .shift_left_one_bit_with_carry = .init(bytes) },
-                else => return error.Unrecognised,
+                else => return .unrecognised,
             }
         },
         0x9 => {
-            if ((bytes[1] & 0x0F) != 0x00) return error.Unrecognised;
+            if ((bytes[1] & 0x0F) != 0x00) return .unrecognised;
             return .{ .skip_next_op_if_registers_are_not_equal = .init(bytes) };
         },
         0xA => return .{ .store_address_in_vi = .init(bytes) },
@@ -114,7 +115,7 @@ pub fn getOperation(bytes: [2]u8) !Operation {
             switch (bytes[1]) {
                 0x9E => return .{ .skip_next_op_if_key_pressed = .init(bytes) },
                 0xA1 => return .{ .skip_next_op_if_key_not_pressed = .init(bytes) },
-                else => return error.Unrecognised,
+                else => return .unrecognised,
             }
         },
         0xF => {
@@ -128,10 +129,10 @@ pub fn getOperation(bytes: [2]u8) !Operation {
                 0x33 => return .{ .store_binary_coded_decimal_from_register_at_vi_to_vi_plus_2 = .init(bytes) },
                 0x55 => return .{ .store_v0_to_vx_inclusive_to_mem_at_vi = .init(bytes) },
                 0x65 => return .{ .fill_v0_to_vx_inclusive_from_mem_at_vi = .init(bytes) },
-                else => return error.Unrecognised,
+                else => return .unrecognised,
             }
         },
-        else => return .no_op,
+        else => return .unrecognised,
     }
 }
 
