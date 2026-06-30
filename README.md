@@ -1,1 +1,1 @@
-Some basic CHIP-8 interpreter (bugs included?).
+Some basic CHIP-8 interpreter (bugs included?)
