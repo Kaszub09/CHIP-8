@@ -267,7 +267,7 @@ pub const VM = struct {
             },
             .store_v0_to_vx_inclusive_to_mem_at_vi => |reg| {
                 const memory_to_write_into = self.memory[self.registers.vI..];
-                for (0..self.registers.v[reg.reg]) |i| {
+                for (0..reg.reg) |i| {
                     memory_to_write_into[i] = self.registers.v[i];
                 }
                 memory_to_write_into[reg.reg] = self.registers.v[reg.reg];
@@ -275,7 +275,7 @@ pub const VM = struct {
             },
             .fill_v0_to_vx_inclusive_from_mem_at_vi => |reg| {
                 const memory_to_read_from = self.memory[self.registers.vI..];
-                for (0..self.registers.v[reg.reg]) |i| {
+                for (0..reg.reg) |i| {
                     self.registers.v[i] = memory_to_read_from[i];
                 }
                 self.registers.v[reg.reg] = memory_to_read_from[reg.reg];

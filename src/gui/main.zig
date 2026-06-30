@@ -11,7 +11,7 @@ pub fn main(init: std.process.Init) !void {
     var iterator = try init.minimal.args.iterateAllocator(init.gpa);
     defer iterator.deinit();
 
-    //Load defualt program, then overwrite from file if supplied
+    //Load default program, then overwrite from file if supplied
     var program: ?[]const u8 = octojam_title;
     std.debug.print("{any}", .{program.?});
 
@@ -25,8 +25,14 @@ pub fn main(init: std.process.Init) !void {
         init.gpa.free(file.?);
     };
 
+    //Debug mode
+    var debug_mode = false;
+    if (iterator.next()) |arg_2| {
+        debug_mode = std.ascii.eqlIgnoreCase(arg_2, "debug");
+    }
+
     var vm = try CHIP_8.VM.init(init.io, program, .{}, 0);
-    //var debug = CHIP_8.DebugVM.init((&vm));
+    var debug_vm = CHIP_8.DebugVM.init((&vm));
 
     // RAYLIB
     rl.initWindow(@as(i32, CHIP_8.VM.display_width) * pixel_multiplier, @as(i32, CHIP_8.VM.display_height) * pixel_multiplier, "CHIP-8 Emulator");
@@ -42,13 +48,15 @@ pub fn main(init: std.process.Init) !void {
             vm.keys.is_key_pressed[key_hex] = rl.isKeyDown(get_key(@truncate(key_hex)));
         }
 
-        _ = try vm.executeNextOp();
-
-        // if (rl.isKeyDown(.space) or rl.isKeyPressed(.enter)) {
-        //     _ = try vm.executeNextOp();
-        //     debug.printNextOp();
-        //     debug.printState();
-        // }
+        if (debug_mode) {
+            if (rl.isKeyDown(.space) or rl.isKeyPressed(.enter)) {
+                _ = try vm.executeNextOp();
+                debug_vm.printNextOp();
+                debug_vm.printState();
+            }
+        } else {
+            _ = try vm.executeNextOp();
+        }
 
         rl.clearBackground(.black);
         for (0..CHIP_8.VM.display_height) |y| {
