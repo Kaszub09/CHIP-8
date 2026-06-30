@@ -214,9 +214,7 @@ pub const VM = struct {
 
                         const pixel: u8 = (byte >> @truncate(7 - bit_offset)) & 0x1;
 
-                        //std.debug.print("x={d},y = {d}, spirte_pixel = {d}, getPixel ={d}= \n", .{ x, y, pixel, self.getPixel(x, y) });
-
-                        // if (pixel == 0) continue; //XORing 0 doens't do anything
+                        if (pixel == 0) continue; //XORing 0 doens't do anything
 
                         if (self.getPixel(x, y) == 0x1) self.registers.v[0xF] = 1;
 
